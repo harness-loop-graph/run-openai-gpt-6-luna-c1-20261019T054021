@@ -1,0 +1,18 @@
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+CREATE TABLE IF NOT EXISTS schema_migrations(version text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now());
+CREATE TABLE rol(id serial PRIMARY KEY, nombre text UNIQUE NOT NULL CHECK(nombre IN ('patient','professional','staff','admin')));
+CREATE TABLE usuario(id uuid PRIMARY KEY DEFAULT gen_random_uuid(), email text UNIQUE NOT NULL, password_hash text NOT NULL, activo boolean NOT NULL DEFAULT true, created_at timestamptz NOT NULL DEFAULT now());
+CREATE TABLE usuario_rol(usuario_id uuid NOT NULL REFERENCES usuario(id), rol_id int NOT NULL REFERENCES rol(id), PRIMARY KEY(usuario_id,rol_id));
+CREATE TABLE paciente(id uuid PRIMARY KEY DEFAULT gen_random_uuid(), usuario_id uuid UNIQUE NOT NULL REFERENCES usuario(id));
+CREATE TABLE profesional(id uuid PRIMARY KEY DEFAULT gen_random_uuid(), usuario_id uuid UNIQUE NOT NULL REFERENCES usuario(id), nombre text NOT NULL);
+CREATE TABLE disponibilidad(id uuid PRIMARY KEY DEFAULT gen_random_uuid(), profesional_id uuid NOT NULL REFERENCES profesional(id), franja_inicio timestamptz NOT NULL, franja_fin timestamptz NOT NULL, CHECK(franja_fin > franja_inicio), UNIQUE(profesional_id,franja_inicio));
+CREATE TABLE cita(id uuid PRIMARY KEY DEFAULT gen_random_uuid(), profesional_id uuid NOT NULL REFERENCES profesional(id), paciente_id uuid NOT NULL REFERENCES paciente(id), franja_inicio timestamptz NOT NULL, franja_fin timestamptz NOT NULL, estado text NOT NULL DEFAULT 'scheduled' CHECK(estado IN ('scheduled','attended','cancelled','no_show')), created_at timestamptz NOT NULL DEFAULT now());
+CREATE UNIQUE INDEX cita_active_slot_uq ON cita(profesional_id,franja_inicio) WHERE estado <> 'cancelled';
+CREATE INDEX cita_patient_idx ON cita(paciente_id, franja_inicio); CREATE INDEX cita_professional_idx ON cita(profesional_id,franja_inicio); CREATE INDEX cita_state_idx ON cita(estado);
+CREATE TABLE encuentro(id uuid PRIMARY KEY DEFAULT gen_random_uuid(), cita_id uuid NOT NULL REFERENCES cita(id), author_id uuid NOT NULL REFERENCES profesional(id), notes text NOT NULL, diagnosis text NOT NULL, version int NOT NULL CHECK(version>0), replaces_id uuid REFERENCES encuentro(id), created_at timestamptz NOT NULL DEFAULT now(), UNIQUE(cita_id,version));
+CREATE TABLE adjunto(id uuid PRIMARY KEY DEFAULT gen_random_uuid(), encuentro_id uuid NOT NULL REFERENCES encuentro(id), filename text NOT NULL, content_type text NOT NULL, storage_name text NOT NULL UNIQUE, created_at timestamptz NOT NULL DEFAULT now());
+CREATE TABLE auditoria(id bigserial PRIMARY KEY, actor_id uuid REFERENCES usuario(id), action text NOT NULL, resource_type text NOT NULL, resource_id text NOT NULL, created_at timestamptz NOT NULL DEFAULT now(), details jsonb NOT NULL DEFAULT '{}');
+CREATE INDEX auditoria_actor_idx ON auditoria(actor_id,created_at); CREATE INDEX auditoria_action_idx ON auditoria(action,created_at);
+CREATE FUNCTION reject_append_only_mutation() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'append-only table'; END $$;
+CREATE TRIGGER encuentro_append_only BEFORE UPDATE OR DELETE ON encuentro FOR EACH ROW EXECUTE FUNCTION reject_append_only_mutation();
+CREATE TRIGGER auditoria_append_only BEFORE UPDATE OR DELETE ON auditoria FOR EACH ROW EXECUTE FUNCTION reject_append_only_mutation();

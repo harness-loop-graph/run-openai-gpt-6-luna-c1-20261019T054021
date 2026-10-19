@@ -1,0 +1,1 @@
+DROP TABLE IF EXISTS adjunto, encuentro, cita, disponibilidad, auditoria, paciente, profesional, usuario_rol, usuario, rol, schema_migrations CASCADE; DROP FUNCTION IF EXISTS reject_append_only_mutation() CASCADE;

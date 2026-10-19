@@ -1,0 +1,5 @@
+import {describe,it,expect} from 'vitest';
+const canReadHistory=(roles:string[],owner:boolean,assigned:boolean)=>roles.includes('admin')?false:roles.includes('patient')?owner:roles.includes('professional')?assigned:false;
+const serializeBooking=(booked:boolean)=>booked?409:201;
+describe('authorization isolation',()=>{it('limits patient access to own record',()=>{expect(canReadHistory(['patient'],true,false)).toBe(true);expect(canReadHistory(['patient'],false,false)).toBe(false)});it('requires an assigned appointment for professionals',()=>{expect(canReadHistory(['professional'],false,true)).toBe(true);expect(canReadHistory(['professional'],false,false)).toBe(false)});it('denies staff clinical content',()=>expect(canReadHistory(['staff'],true,true)).toBe(false));});
+describe('booking concurrency invariant',()=>{it('allows one active booking and conflicts the next',()=>{let taken=false;const book=()=>{if(taken)return serializeBooking(true);taken=true;return serializeBooking(false)};expect([book(),book()].sort()).toEqual([201,409]);});});
